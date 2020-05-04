@@ -711,205 +711,197 @@ namespace CoPilot
 
             ImGui.End();
         }
+
+
+        //public PoeChatElement ChatPanel => GetObject<Element>(M.Read<long>(Address + 0x3F8));
+
+        private bool BrandActive()
+        {
+            List<ActorSkill> skills = GameController.Game.IngameState.Data.LocalPlayer.GetComponent<Actor>().ActorSkills;
+            ActorSkill skill = skills.Find(sk => sk.InternalName == "storm_brand");
+            if (skill == null)
+                return false; // No Storm Brand in skill list, so brand recall bakes no sense
+            if (!skill.IsUsing)
+                return false; // Storm brand not active
+            if (skill.SkillUseStage == 1)
+                return false; // Storm brand not active Because sometimes IsUsing tics 
+            return true;
+        }
+
+        private bool checkBrandRecall()
+        {
+            if (Keyboard.IsKeyDown((int)Keys.Alt))
+                return false;
+            if (GameController.IngameState.IngameUi.OpenLeftPanel.IsVisible) 
+                return false;
+            if (GameController.IngameState.IngameUi.OpenRightPanel.IsVisible)
+                return false;
+            if (!BrandActive())
+            {
+                const int size = 200;
+                RectangleF rect = GameController.Window.GetWindowRectangle();
+                RectangleF r = new RectangleF(rect.Width/2-size/2, rect.Height/2-size/2, size,size);
+                Color c = new Color(255, 0, 0, 7);
+                Graphics.DrawBox(r, c);
+                return false;
+            }
+            if (GameController.IngameState.IngameUi.Children[38].Children[0].IsVisible)
+                return false;
+            //if (GameController.IngameState.IngameUi.Children[21].Width>0) // NPC communication ?
+            //    return false;
+            return true;
+        }
         public override void Render()
         {
             if (Settings.Enable)
             {
-                // Update Stats
-                /*
-                if ((DateTime.Now - lastStats).TotalMilliseconds >= 1000)
+                if (GameController.Area.CurrentArea.IsHideout)
+                    return;
+                if (GameController.Area.CurrentArea.IsTown)
+                    return;
+                var localPlayer = GameController.Game.IngameState.Data.LocalPlayer;
+                var player = localPlayer.GetComponent<Life>();
+                var buffs = player.Buffs;
+                var isAttacking = localPlayer.GetComponent<Actor>().isAttacking;
+                var isCasting = localPlayer.GetComponent<Actor>().Action.HasFlag(ActionFlags.UsingAbility);
+                var isMoving = localPlayer.GetComponent<Actor>().isMoving;
+                var skills = localPlayer.GetComponent<Actor>().ActorSkills;
+                var vaalSkills = localPlayer.GetComponent<Actor>().ActorVaalSkills;
+
+                playerPosition = GameController.Player.Pos;
+                enemys = GameController.Entities.Where(x => x.IsValid && x.IsHostile && !x.IsHidden && !x.IsDead && x.IsAlive && x.IsTargetable && x.GetComponent<Monster>() != null && x.GetComponent<Life>().CurHP > 0 && !x.Buffs.Exists(b => b.Name == "hidden_monster_disable_minions"));
+
+                if (Settings.autoGolemEnabled)
+                    golemsAlive = GameController.Entities.Where(x => !x.IsHostile && (x.Path.Contains("ChaosElemental") || x.Path.Contains("FireElemental") || x.Path.Contains("IceElemental") || x.Path.Contains("LightningGolem") || x.Path.Contains("RockGolem") || x.Path.Contains("BoneGolem") || x.Path.Contains("DropBearUniqueSummoned"))).Count();
+
+
+                // Do not Cast anything while we are untouchable or Chat is Open
+                if (buffs.Exists(x => x.Name == "grace_period") || GameController.IngameState.IngameUi.ChatBox.IsVisible)
+                    return;
+
+                // Still waiting for proper Skill.cooldown / Skill.isReady to add to the Loop.
+                // Currently thats unanavailable in API.
+                foreach (var skill in skills)
                 {
-                    stats.Update();
-                    lastStats = DateTime.Now;
-                }*/
-                if ((WinApi.GetAsyncKeyState(Settings.forcedAutoQuit) & 0x8000) != 0)
-                {
-                    LogMessage("Panic Quit...");
-                    Quit();
-                }
-
-                if (!GameController.Area.CurrentArea.IsHideout && !GameController.Area.CurrentArea.IsTown /*&& !IngameUi.StashElement.IsVisible && !IngameUi.OpenRightPanel.IsVisible*/ )
-                {
-
-                    var localPlayer = GameController.Game.IngameState.Data.LocalPlayer;
-                    var player = localPlayer.GetComponent<Life>();
-                    var buffs = player.Buffs;
-                    var isAttacking = localPlayer.GetComponent<Actor>().isAttacking;
-                    var isCasting = localPlayer.GetComponent<Actor>().Action.HasFlag(ActionFlags.UsingAbility);
-                    var isMoving = localPlayer.GetComponent<Actor>().isMoving;
-                    var skills = localPlayer.GetComponent<Actor>().ActorSkills;
-                    var vaalSkills = localPlayer.GetComponent<Actor>().ActorVaalSkills;
-
-                    playerPosition = GameController.Player.Pos;
-                    enemys = GameController.Entities.Where(x => x.IsValid && x.IsHostile && !x.IsHidden && !x.IsDead && x.IsAlive && x.IsTargetable && x.GetComponent<Monster>() != null && x.GetComponent<Life>().CurHP > 0 && !x.Buffs.Exists(b => b.Name == "hidden_monster_disable_minions"));
-
-                    if (Settings.offeringsEnabled)
-                        corpses = GameController.Entities.Where(x => x.IsValid && !x.IsHidden && x.IsHostile && x.IsDead && x.IsTargetable && x.GetComponent<Monster>() != null);
-                    if (Settings.autoGolemEnabled)
-                        golemsAlive = GameController.Entities.Where(x => !x.IsHostile && (x.Path.Contains("ChaosElemental") || x.Path.Contains("FireElemental") || x.Path.Contains("IceElemental") || x.Path.Contains("LightningGolem") || x.Path.Contains("RockGolem") || x.Path.Contains("BoneGolem") || x.Path.Contains("DropBearUniqueSummoned"))).Count();
-
-                    //int volaCount = GameController.Entities.Where(x => x.Path.Contains("VolatileDeadCore")).Count();
-                    //LogError("Vola: " + volaCount.ToString());
-
-                    // Feature request
-                    //  LeHeupOfSoupheute um 19:49 Uhr
-                    //  Would it be possible to add convocate on nearby enemies? Pretty please
-
-                    // Thanosheute um 16:15 Uhr
-                    // Totalschaden Can you make a "Tempest Shield" option in your CoPilot please ?
+                    //if (!Ready())
+                    //    break;
+                    skill.Stats.TryGetValue(GameStat.ManaCost, out int _manaCost);
+                    int manaCost = _manaCost;
+                    if (!skill.IsOnSkillBar || skill.SkillSlotIndex < 1 || skill.SkillSlotIndex == 2 || player.CurMana < manaCost)
+                        continue;
 
 
-                    // Option for Cyclone on destroyable stuff ?
-                    // Chest isTargetable && !isOpen && isHostile
+                    #region Enduring Cry / Rallying Cry
+                    //if (Settings.enduringCryEnabled || Settings.rallyingCryEnabled)
+                    //{
+                    //    try
+                    //    {
+                    //        if ((DateTime.Now - lastWarCry).TotalMilliseconds > Settings.warCryCooldown.Value && skill.InternalName == "enduring_cry" || skill.InternalName == "inspiring_cry")
+                    //        {
+                    //            if (Settings.enduringCryEnabled && Settings.rallyingCryEnabled && skills.Exists(x => x.InternalName == "enduring_cry") && skills.Exists(x => x.InternalName == "inspiring_cry"))
+                    //            {
+                    //                if (GetMonsterWithin(Settings.warCryTriggerRange) >= 1 || player.HPPercentage < 0.90f || (Settings.warCryKeepRage &&
+                    //                    ((DateTime.Now - lastWarCry).TotalMilliseconds > 3.8 || !buffs.Exists(b => b.Name == "rage" && b.Charges >= 50))))
+                    //                {
+                    //                    if (!buffs.Exists(x => x.Name == "endurance_charge" && x.Timer * 1000 > Settings.warCryCooldown.Value + 100) ||
+                    //                        buffs.Exists(x => x.Name == "inspiring_cry" && x.Timer * 1000 > Settings.warCryCooldown.Value + 100))
+                    //                    {
+                    //                        if (skill.InternalName == "inspiring_cry")
+                    //                            continue;
+                    //                        if (skill.InternalName == "enduring_cry")
+                    //                        {
+                    //                            KeyPress(GetSkillInputKey(skill.SkillSlotIndex));
+                    //                            lastWarCry = DateTime.Now;
+                    //                        }
+                    //                    }
+                    //                    else if (skill.InternalName == "inspiring_cry")
+                    //                    {
+                    //                        KeyPress(GetSkillInputKey(skill.SkillSlotIndex));
+                    //                        lastWarCry = DateTime.Now;
+                    //                    }
 
-                    #region Auto Quit
-                    if (Settings.autoQuitEnabled)
-                    {
-                        try
-                        {
-                            if (localPlayer.IsValid)
-                            {
-                                if ((Math.Round(player.HPPercentage, 3) * 100 < Settings.hpPctQuit.Value || player.MaxES > 0 && (Math.Round(player.ESPercentage, 3) * 100 < Settings.esPctQuit.Value)))
-                                {
-                                    Quit();
-                                }
-                            }
-                        }
-                        catch (Exception e)
-                        {
-                            LogError(e.ToString());
-                        }
-                    }
-                    #endregion
+                    //                }
+                    //            }
+                    //            else if (Settings.enduringCryEnabled || Settings.rallyingCryEnabled)
+                    //            {
+                    //                if (GetMonsterWithin(Settings.warCryTriggerRange) >= 1 || player.HPPercentage < 0.90f || (Settings.warCryKeepRage &&
+                    //                    ((DateTime.Now - lastWarCry).TotalMilliseconds > 3.8 || !buffs.Exists(b => b.Name == "rage" && b.Charges >= 50))))
+                    //                {
+                    //                    if (Settings.enduringCryEnabled && skill.InternalName == "enduring_cry")
+                    //                    {
+                    //                        KeyPress(GetSkillInputKey(skill.SkillSlotIndex));
+                    //                        lastWarCry = DateTime.Now;
+                    //                    }
+                    //                    else if (Settings.rallyingCryEnabled && skill.InternalName == "inspiring_cry")
+                    //                    {
+                    //                        KeyPress(GetSkillInputKey(skill.SkillSlotIndex));
+                    //                        lastWarCry = DateTime.Now;
+                    //                    }
 
-
-                    // Do not Cast anything while we are untouchable or Chat is Open
-                    if (buffs.Exists(x => x.Name == "grace_period") || GameController.IngameState.IngameUi.ChatBox.IsVisible)
-                        return;
-
-                    // Still waiting for proper Skill.cooldown / Skill.isReady to add to the Loop.
-                    // Currently thats unanavailable in API.
-                    foreach (var skill in skills)
-                    {
-                        if (!Ready())
-                            break;
-                        skill.Stats.TryGetValue(GameStat.ManaCost, out int _manaCost);
-                        int manaCost = _manaCost;
-                        if (!skill.IsOnSkillBar || skill.SkillSlotIndex < 1 || skill.SkillSlotIndex == 2 || player.CurMana < manaCost)
-                            continue;
-
-
-                        #region Enduring Cry / Rallying Cry
-                        if (Settings.enduringCryEnabled || Settings.rallyingCryEnabled)
-                        {
-                            try
-                            {
-                                if ((DateTime.Now - lastWarCry).TotalMilliseconds > Settings.warCryCooldown.Value && skill.InternalName == "enduring_cry" || skill.InternalName == "inspiring_cry")
-                                {
-                                    if (Settings.enduringCryEnabled && Settings.rallyingCryEnabled && skills.Exists(x => x.InternalName == "enduring_cry") && skills.Exists(x => x.InternalName == "inspiring_cry"))
-                                    {
-                                        if (GetMonsterWithin(Settings.warCryTriggerRange) >= 1 || player.HPPercentage < 0.90f || (Settings.warCryKeepRage &&
-                                            ((DateTime.Now - lastWarCry).TotalMilliseconds > 3.8 || !buffs.Exists(b => b.Name == "rage" && b.Charges >= 50))))
-                                        {
-                                            if (!buffs.Exists(x => x.Name == "endurance_charge" && x.Timer * 1000 > Settings.warCryCooldown.Value + 100) ||
-                                                buffs.Exists(x => x.Name == "inspiring_cry" && x.Timer * 1000 > Settings.warCryCooldown.Value + 100))
-                                            {
-                                                if (skill.InternalName == "inspiring_cry")
-                                                    continue;
-                                                if (skill.InternalName == "enduring_cry")
-                                                {
-                                                    KeyPress(GetSkillInputKey(skill.SkillSlotIndex));
-                                                    lastWarCry = DateTime.Now;
-                                                }
-                                            }
-                                            else if (skill.InternalName == "inspiring_cry")
-                                            {
-                                                KeyPress(GetSkillInputKey(skill.SkillSlotIndex));
-                                                lastWarCry = DateTime.Now;
-                                            }
-
-                                        }
-                                    }
-                                    else if (Settings.enduringCryEnabled || Settings.rallyingCryEnabled)
-                                    {
-                                        if (GetMonsterWithin(Settings.warCryTriggerRange) >= 1 || player.HPPercentage < 0.90f || (Settings.warCryKeepRage &&
-                                            ((DateTime.Now - lastWarCry).TotalMilliseconds > 3.8 || !buffs.Exists(b => b.Name == "rage" && b.Charges >= 50))))
-                                        {
-                                            if (Settings.enduringCryEnabled && skill.InternalName == "enduring_cry")
-                                            {
-                                                KeyPress(GetSkillInputKey(skill.SkillSlotIndex));
-                                                lastWarCry = DateTime.Now;
-                                            }
-                                            else if (Settings.rallyingCryEnabled && skill.InternalName == "inspiring_cry")
-                                            {
-                                                KeyPress(GetSkillInputKey(skill.SkillSlotIndex));
-                                                lastWarCry = DateTime.Now;
-                                            }
-
-                                        }
-                                    }
-                                }
-                            }
-                            catch (Exception e)
-                        {
-                            LogError(e.ToString());
-                        }
-                    }
+                    //                }
+                    //            }
+                    //        }
+                    //    }
+                    //    catch (Exception e)
+                    //    {
+                    //        LogError(e.ToString());
+                    //    }
+                    //}
                     #endregion
 
                     #region Phase Run
-                    if (Settings.phaserunEnabled)
-                    {
-                        try
-                        {
-                            if ((DateTime.Now - lastPhaserun).TotalMilliseconds > Settings.phaserunDelay.Value && skill.InternalName == "new_phase_run")
-                            {
-                                if (!isAttacking && isMoving && (!buffs.Exists(b => b.Name == "new_phase_run" || buffs.Exists(x => x.Name == "new_phase_run" && x.Timer < 0.013))))
-                                {
-                                    KeyPress(GetSkillInputKey(skill.SkillSlotIndex));
-                                    lastPhaserun = DateTime.Now;
-                                }
-                            }
-                        }
-                        catch (Exception e)
-                        {
-                            LogError(e.ToString());
-                        }
-                    }
+                    //if (Settings.phaserunEnabled)
+                    //{
+                    //    try
+                    //    {
+                    //        if ((DateTime.Now - lastPhaserun).TotalMilliseconds > Settings.phaserunDelay.Value && skill.InternalName == "new_phase_run")
+                    //        {
+                    //            if (!isAttacking && isMoving && (!buffs.Exists(b => b.Name == "new_phase_run" || buffs.Exists(x => x.Name == "new_phase_run" && x.Timer < 0.013))))
+                    //            {
+                    //                KeyPress(GetSkillInputKey(skill.SkillSlotIndex));
+                    //                lastPhaserun = DateTime.Now;
+                    //            }
+                    //        }
+                    //    }
+                    //    catch (Exception e)
+                    //    {
+                    //        LogError(e.ToString());
+                    //    }
+                    //}
                     #endregion
 
                     #region Molten Shell / Steelskin / Bone Armour / Arcane Cloak
-                    if (Settings.moltenShellEnabled)
-                    {
-                        try
-                        {
-                            // Cooldown reset starts on Buff expire
-                            if (buffs.Exists(x => x.Name == "fire_shield") || buffs.Exists(x => x.Name == "quick_guard") || buffs.Exists(x => x.Name == "bone_armour") || buffs.Exists(x => x.Name == "arcane_cloak"))
-                            {
-                                lastMoltenShell = DateTime.MaxValue;
-                            }
-                            else
-                            {
-                                if (lastMoltenShell == DateTime.MaxValue)
-                                {
-                                    lastMoltenShell = DateTime.Now;
-                                }
-                            }
-                            if ((DateTime.Now - lastMoltenShell).TotalMilliseconds > Settings.moltenShellDelay.Value &&
-                                (skill.InternalName == "molten_shell_barrier" || skill.InternalName == "steelskin" || skill.InternalName == "bone_armour" || skill.InternalName == "arcane_cloak"))
-                            {
-                                if ((GetMonsterWithin(Settings.moltenShellRange) >= 1))
-                                {
-                                    KeyPress(GetSkillInputKey(skill.SkillSlotIndex));
-                                    lastMoltenShell = DateTime.MaxValue;
-                                }
-                            }
-                        }
-                        catch (Exception e)
-                        {
-                            LogError(e.ToString());
-                        }
-                    }
+                    //if (Settings.moltenShellEnabled)
+                    //{
+                    //    try
+                    //    {
+                    //        // Cooldown reset starts on Buff expire
+                    //        if (buffs.Exists(x => x.Name == "fire_shield") || buffs.Exists(x => x.Name == "quick_guard") || buffs.Exists(x => x.Name == "bone_armour") || buffs.Exists(x => x.Name == "arcane_cloak"))
+                    //        {
+                    //            lastMoltenShell = DateTime.MaxValue;
+                    //        }
+                    //        else
+                    //        {
+                    //            if (lastMoltenShell == DateTime.MaxValue)
+                    //            {
+                    //                lastMoltenShell = DateTime.Now;
+                    //            }
+                    //        }
+                    //        if ((DateTime.Now - lastMoltenShell).TotalMilliseconds > Settings.moltenShellDelay.Value &&
+                    //            (skill.InternalName == "molten_shell_barrier" || skill.InternalName == "steelskin" || skill.InternalName == "bone_armour" || skill.InternalName == "arcane_cloak"))
+                    //        {
+                    //            if ((GetMonsterWithin(Settings.moltenShellRange) >= 1))
+                    //            {
+                    //                KeyPress(GetSkillInputKey(skill.SkillSlotIndex));
+                    //                lastMoltenShell = DateTime.MaxValue;
+                    //            }
+                    //        }
+                    //    }
+                    //    catch (Exception e)
+                    //    {
+                    //        LogError(e.ToString());
+                    //    }
+                    //}
                     #endregion
 
                     #region Blood Rage
@@ -955,103 +947,103 @@ namespace CoPilot
                     #endregion
 
                     #region Vortex
-                    if (Settings.vortexEnabled)
-                    {
-                        try
-                        {
-                            if ((DateTime.Now - lastVortex).TotalMilliseconds > Settings.vortexDelay.Value && skill.InternalName == "frost_bolt_nova")
-                            {
-                                if (GetMonsterWithin(Settings.vortexRange) >= 1)
-                                {
-                                    KeyPress(GetSkillInputKey(skill.SkillSlotIndex));
-                                    lastVortex = DateTime.Now;
-                                }
-                            }
-                        }
-                        catch (Exception e)
-                        {
-                            LogError(e.ToString());
-                        }
-                    }
+                    //if (Settings.vortexEnabled)
+                    //{
+                    //    try
+                    //    {
+                    //        if ((DateTime.Now - lastVortex).TotalMilliseconds > Settings.vortexDelay.Value && skill.InternalName == "frost_bolt_nova")
+                    //        {
+                    //            if (GetMonsterWithin(Settings.vortexRange) >= 1)
+                    //            {
+                    //                KeyPress(GetSkillInputKey(skill.SkillSlotIndex));
+                    //                lastVortex = DateTime.Now;
+                    //            }
+                    //        }
+                    //    }
+                    //    catch (Exception e)
+                    //    {
+                    //        LogError(e.ToString());
+                    //    }
+                    //}
                     #endregion
 
                     #region Divine Ire
-                    if (Settings.divineIreEnabled)
-                    {
-                        try
-                        {
-                            if ((DateTime.Now - lastStackSkill).TotalMilliseconds > 250 &&
-                                (skill.InternalName == "divine_tempest" || skill.InternalName == "virulent_arrow" || skill.InternalName == "charged_attack_channel"))
-                            {
-                                if (buffs.Exists(b => (b.Name == "divine_tempest_stage" && b.Charges >= Settings.divineIreStacks.Value) ||
-                                (b.Name == "charged_attack" && b.Charges >= Settings.divineIreStacks) ||
-                                (b.Name == "virulent_arrow_counter" && b.Charges >= Settings.divineIreStacks)))
-                                {
+                    //if (Settings.divineIreEnabled)
+                    //{
+                    //    try
+                    //    {
+                    //        if ((DateTime.Now - lastStackSkill).TotalMilliseconds > 250 &&
+                    //            (skill.InternalName == "divine_tempest" || skill.InternalName == "virulent_arrow" || skill.InternalName == "charged_attack_channel"))
+                    //        {
+                    //            if (buffs.Exists(b => (b.Name == "divine_tempest_stage" && b.Charges >= Settings.divineIreStacks.Value) ||
+                    //            (b.Name == "charged_attack" && b.Charges >= Settings.divineIreStacks) ||
+                    //            (b.Name == "virulent_arrow_counter" && b.Charges >= Settings.divineIreStacks)))
+                    //            {
 
-                                    if (Settings.divineIreWaitForInfused)
-                                    {
-                                        // Get delay here at some point ?
-                                        if (!buffs.Exists(x => x.Name == "storm_barrier_support_damage" && x.Timer > 1.0))
-                                        {
-                                            return;
-                                        }
-                                    }
-                                    Keyboard.KeyUp(GetSkillInputKey(skill.SkillSlotIndex));
-                                    lastStackSkill = DateTime.Now;
-                                    if (Settings.debugMode)
-                                        LogError("Release Key Pressed: " + GetSkillInputKey(skill.SkillSlotIndex).ToString());
-                                }
-                            }
-                        }
-                        catch (Exception e)
-                        {
-                            LogError(e.ToString());
-                        }
-                    }
+                    //                if (Settings.divineIreWaitForInfused)
+                    //                {
+                    //                    // Get delay here at some point ?
+                    //                    if (!buffs.Exists(x => x.Name == "storm_barrier_support_damage" && x.Timer > 1.0))
+                    //                    {
+                    //                        return;
+                    //                    }
+                    //                }
+                    //                Keyboard.KeyUp(GetSkillInputKey(skill.SkillSlotIndex));
+                    //                lastStackSkill = DateTime.Now;
+                    //                if (Settings.debugMode)
+                    //                    LogError("Release Key Pressed: " + GetSkillInputKey(skill.SkillSlotIndex).ToString());
+                    //            }
+                    //        }
+                    //    }
+                    //    catch (Exception e)
+                    //    {
+                    //        LogError(e.ToString());
+                    //    }
+                    //}
                     #endregion
 
                     #region Doedre Effigy
-                    if (Settings.doedreEffigyEnabled)
-                    {
-                        try
-                        {
-                            if ((DateTime.Now - lastdoedreEffigy).TotalMilliseconds > Settings.doedreEffigyDelay.Value && skill.InternalName == "curse_pillar")
-                            {
-                                if (CountEnemysAroundMouse(350) > 0)
-                                {
-                                    KeyPress(GetSkillInputKey(skill.SkillSlotIndex));
-                                    lastdoedreEffigy = DateTime.Now;
-                                }
-                            }
-                        }
-                        catch (Exception e)
-                        {
-                            LogError(e.ToString());
-                        }
-                    }
+                    //if (Settings.doedreEffigyEnabled)
+                    //{
+                    //    try
+                    //    {
+                    //        if ((DateTime.Now - lastdoedreEffigy).TotalMilliseconds > Settings.doedreEffigyDelay.Value && skill.InternalName == "curse_pillar")
+                    //        {
+                    //            if (CountEnemysAroundMouse(350) > 0)
+                    //            {
+                    //                KeyPress(GetSkillInputKey(skill.SkillSlotIndex));
+                    //                lastdoedreEffigy = DateTime.Now;
+                    //            }
+                    //        }
+                    //    }
+                    //    catch (Exception e)
+                    //    {
+                    //        LogError(e.ToString());
+                    //    }
+                    //}
                     #endregion
 
                     #region Offerings
 
-                    if (Settings.offeringsEnabled)
-                    {
-                        try
-                        {
-                            if ((DateTime.Now - lastOfferings).TotalMilliseconds > 500 &&
-                                (skill.InternalName == "spirit_offering" || skill.InternalName == "bone_offering" || skill.InternalName == "flesh_offering"))
-                            {
-                                if (GetMonsterWithin(Settings.offeringsTriggerRange) >= Settings.offeringsMinEnemys && !buffs.Exists(x => x.Name == "active_offering" && x.Timer > 0.3) && CountCorpsesAroundMouse(mouseAutoSnapRange) > 0)
-                                {
-                                    KeyPress(GetSkillInputKey(skill.SkillSlotIndex));
-                                    lastOfferings = DateTime.Now;
-                                }
-                            }
-                        }
-                        catch (Exception e)
-                        {
-                            LogError(e.ToString());
-                        }
-                    }
+                    //if (Settings.offeringsEnabled)
+                    //{
+                    //    try
+                    //    {
+                    //        if ((DateTime.Now - lastOfferings).TotalMilliseconds > 500 &&
+                    //            (skill.InternalName == "spirit_offering" || skill.InternalName == "bone_offering" || skill.InternalName == "flesh_offering"))
+                    //        {
+                    //            if (GetMonsterWithin(Settings.offeringsTriggerRange) >= Settings.offeringsMinEnemys && !buffs.Exists(x => x.Name == "active_offering" && x.Timer > 0.3) && CountCorpsesAroundMouse(mouseAutoSnapRange) > 0)
+                    //            {
+                    //                KeyPress(GetSkillInputKey(skill.SkillSlotIndex));
+                    //                lastOfferings = DateTime.Now;
+                    //            }
+                    //        }
+                    //    }
+                    //    catch (Exception e)
+                    //    {
+                    //        LogError(e.ToString());
+                    //    }
+                    //}
                     #endregion
 
                     #region Any Vaal Skill
@@ -1082,12 +1074,15 @@ namespace CoPilot
                     {
                         try
                         {
-                            if ((DateTime.Now - lastBrandRecall).TotalMilliseconds > Settings.brandRecallCooldown && skill.InternalName == "sigil_recall")
+                            if (checkBrandRecall())
                             {
-                                if (GetMonsterWithin(Settings.brandRecallTriggerRange) >= Settings.brandRecallMinEnemys)
+                                if ((DateTime.Now - lastBrandRecall).TotalMilliseconds > Settings.brandRecallCooldown && skill.InternalName == "sigil_recall")
                                 {
-                                    KeyPress(GetSkillInputKey(skill.SkillSlotIndex));
-                                    lastBrandRecall = DateTime.Now;
+                                    //if (GetMonsterWithin(Settings.brandRecallTriggerRange) >= Settings.brandRecallMinEnemys)
+                                    //{
+                                        KeyPress(GetSkillInputKey(skill.SkillSlotIndex));
+                                        lastBrandRecall = DateTime.Now;
+                                    //}
                                 }
                             }
                         }
@@ -1134,251 +1129,250 @@ namespace CoPilot
                         }
                     }
                     #endregion
+
+                    #region Delve Flare
+                    //if (Settings.delveFlareEnabled)
+                    //{
+                    //    try
+                    //    {
+                    //        if ((DateTime.Now - lastDelveFlare).TotalMilliseconds > 1000 && (player.ESPercentage < (Settings.delveFlareEsBelow / 100) || player.HPPercentage < (Settings.delveFlareHpBelow / 100)) && buffs.Exists(x => x.Name == "delve_degen_buff" && x.Charges >= Settings.delveFlareDebuffStacks))
+                    //        {
+                    //            KeyPress(Settings.delveFlareKey.Value);
+                    //            lastDelveFlare = DateTime.Now;
+                    //        }
+                    //    }
+                    //    catch (Exception e)
+                    //    {
+                    //        LogError(e.ToString());
+                    //    }
+                    //}
+                    #endregion
+
+                    #region Speed Flask
+                    //if ((Settings.useSpeed4 || Settings.useSpeed5))
+                    //{
+                    //    try
+                    //    {
+                    //        if ((DateTime.Now - lastFlask).TotalMilliseconds > 500 && ((Settings.useSpeedAttack && isAttacking) || (Settings.useSpeedMoving && isMoving)) && !buffs.Exists(x => x.Name == "flask_utility_sprint"))
+                    //        {
+                    //            flask4 = GameController.Game.IngameState.ServerData.PlayerInventories.FirstOrDefault(x => x.Inventory.InventType == InventoryTypeE.Flask)?.Inventory?.InventorySlotItems?.FirstOrDefault(x => x.InventoryPosition.X == 3)?.Item;
+                    //            flask5 = GameController.Game.IngameState.ServerData.PlayerInventories.FirstOrDefault(x => x.Inventory.InventType == InventoryTypeE.Flask)?.Inventory?.InventorySlotItems?.FirstOrDefault(x => x.InventoryPosition.X == 4)?.Item;
+
+                    //            if (Settings.useSpeed4 && Settings.useSpeed5 && flask4 != null && flask4.Address != 0x00 && flask5 != null && flask5.Address != 0x00)
+                    //            {
+                    //                var charges4 = flask4.GetComponent<Charges>();
+                    //                var charges5 = flask5.GetComponent<Charges>();
+                    //                if (charges4.NumCharges >= charges4.ChargesPerUse && charges5.NumCharges >= charges5.ChargesPerUse)
+                    //                {
+                    //                    if (charges4.NumCharges > charges5.NumCharges)
+                    //                    {
+                    //                        KeyPress(Keys.D4, false);
+                    //                        lastFlask = DateTime.Now;
+                    //                    }
+                    //                    else if (charges5.NumCharges > charges4.NumCharges)
+                    //                    {
+                    //                        KeyPress(Keys.D5, false);
+                    //                        lastFlask = DateTime.Now;
+                    //                    }
+                    //                    else
+                    //                    {
+                    //                        KeyPress(Keys.D4, false);
+                    //                        lastFlask = DateTime.Now;
+                    //                    }
+                    //                }
+
+                    //            }
+                    //            else if (Settings.useSpeed4 && flask4 != null && flask4.Address != 0x00)
+                    //            {
+                    //                var charges4 = flask4.GetComponent<Charges>();
+                    //                if (charges4.NumCharges >= charges4.ChargesPerUse)
+                    //                {
+                    //                    KeyPress(Keys.D4, false);
+                    //                    lastFlask = DateTime.Now;
+                    //                }
+                    //            }
+                    //            else if (Settings.useSpeed5 && flask5 != null && flask5.Address != 0x00)
+                    //            {
+                    //                var charges5 = flask5.GetComponent<Charges>();
+                    //                if (charges5.NumCharges >= charges5.ChargesPerUse)
+                    //                {
+                    //                    KeyPress(Keys.D5, false);
+                    //                    lastFlask = DateTime.Now;
+                    //                }
+                    //            }
+                    //        }
+                    //    }
+                    //    catch (Exception e)
+                    //    {
+                    //        LogError(e.ToString());
+                    //    }
+                    //}
+                    #endregion
+
+                    #region Custom Skill
+                    //if (Settings.customEnabled)
+                    //{
+                    //    try
+                    //    {
+                    //        if (Ready() && (DateTime.Now - lastCustom).TotalMilliseconds > Settings.customCooldown.Value && GetMonsterWithin(Settings.customTriggerRange) >= Settings.customMinEnemys)
+                    //        {
+                    //            if ((Math.Round(player.HPPercentage, 3) * 100 <= Settings.customHpPct.Value || player.MaxES > 0 && (Math.Round(player.ESPercentage, 3) * 100 < Settings.customEsPct.Value)))
+                    //            {
+                    //                KeyPress(Settings.customKey);
+                    //                lastCustom = DateTime.Now;
+                    //            }
+
+                    //        }
+                    //    }
+                    //    catch (Exception e)
+                    //    {
+                    //        LogError(e.ToString());
+                    //    }
+                    //}
+                    #endregion
+
+                    #region Detonate Mines ( to be done )
+                    //if (Settings.minesEnabled)
+                    //{
+                    //    try
+                    //    {
+                    //        if (Ready())
+                    //        {
+                    //            var remoteMines = localPlayer.GetComponent<Actor>().DeployedObjects.Where(x => x.Entity != null && x.Entity.Path == "Metadata/MiscellaneousObjects/RemoteMine").ToList();
+
+                    //            // Removed Logic
+                    //            // What should a proper Detonator do and when ?
+                    //            // Detonate Mines when they have the chance to hit a target (Range), include min. mines ?
+                    //            // Internal delay 500-1000ms ?
+                    //            // Removing/Filter enemys that are not "deployed" yet / invunerale from enemys list ? 
+
+                    //        }
+                    //    }
+                    //    catch (Exception e)
+                    //    {
+                    //        LogError(e.ToString());
+                    //    }
+                    //}
+                    #endregion
                 }
-
-                #region Delve Flare
-                if (Settings.delveFlareEnabled)
-                {
-                    try
-                    {
-                        if ((DateTime.Now - lastDelveFlare).TotalMilliseconds > 1000 && (player.ESPercentage < (Settings.delveFlareEsBelow / 100) || player.HPPercentage < (Settings.delveFlareHpBelow / 100)) && buffs.Exists(x => x.Name == "delve_degen_buff" && x.Charges >= Settings.delveFlareDebuffStacks))
-                        {
-                            KeyPress(Settings.delveFlareKey.Value);
-                            lastDelveFlare = DateTime.Now;
-                        }
-                    }
-                    catch (Exception e)
-                    {
-                        LogError(e.ToString());
-                    }
-                }
-                #endregion
-
-                #region Speed Flask
-                if ((Settings.useSpeed4 || Settings.useSpeed5))
-                {
-                    try
-                    {
-                        if ((DateTime.Now - lastFlask).TotalMilliseconds > 500 && ((Settings.useSpeedAttack && isAttacking) || (Settings.useSpeedMoving && isMoving)) && !buffs.Exists(x => x.Name == "flask_utility_sprint"))
-                        {
-                            flask4 = GameController.Game.IngameState.ServerData.PlayerInventories.FirstOrDefault(x => x.Inventory.InventType == InventoryTypeE.Flask)?.Inventory?.InventorySlotItems?.FirstOrDefault(x => x.InventoryPosition.X == 3)?.Item;
-                            flask5 = GameController.Game.IngameState.ServerData.PlayerInventories.FirstOrDefault(x => x.Inventory.InventType == InventoryTypeE.Flask)?.Inventory?.InventorySlotItems?.FirstOrDefault(x => x.InventoryPosition.X == 4)?.Item;
-
-                            if (Settings.useSpeed4 && Settings.useSpeed5 && flask4 != null && flask4.Address != 0x00 && flask5 != null && flask5.Address != 0x00)
-                            {
-                                var charges4 = flask4.GetComponent<Charges>();
-                                var charges5 = flask5.GetComponent<Charges>();
-                                if (charges4.NumCharges >= charges4.ChargesPerUse && charges5.NumCharges >= charges5.ChargesPerUse)
-                                {
-                                    if (charges4.NumCharges > charges5.NumCharges)
-                                    {
-                                        KeyPress(Keys.D4, false);
-                                        lastFlask = DateTime.Now;
-                                    }
-                                    else if (charges5.NumCharges > charges4.NumCharges)
-                                    {
-                                        KeyPress(Keys.D5, false);
-                                        lastFlask = DateTime.Now;
-                                    }
-                                    else
-                                    {
-                                        KeyPress(Keys.D4, false);
-                                        lastFlask = DateTime.Now;
-                                    }
-                                }
-
-                            }
-                            else if (Settings.useSpeed4 && flask4 != null && flask4.Address != 0x00)
-                            {
-                                var charges4 = flask4.GetComponent<Charges>();
-                                if (charges4.NumCharges >= charges4.ChargesPerUse)
-                                {
-                                    KeyPress(Keys.D4, false);
-                                    lastFlask = DateTime.Now;
-                                }
-                            }
-                            else if (Settings.useSpeed5 && flask5 != null && flask5.Address != 0x00)
-                            {
-                                var charges5 = flask5.GetComponent<Charges>();
-                                if (charges5.NumCharges >= charges5.ChargesPerUse)
-                                {
-                                    KeyPress(Keys.D5, false);
-                                    lastFlask = DateTime.Now;
-                                }
-                            }
-                        }
-                    }
-                    catch (Exception e)
-                    {
-                        LogError(e.ToString());
-                    }
-                }
-                #endregion
-
-                #region Custom Skill
-                if (Settings.customEnabled)
-                {
-                    try
-                    {
-                        if (Ready() && (DateTime.Now - lastCustom).TotalMilliseconds > Settings.customCooldown.Value && GetMonsterWithin(Settings.customTriggerRange) >= Settings.customMinEnemys)
-                        {
-                            if ((Math.Round(player.HPPercentage, 3) * 100 <= Settings.customHpPct.Value || player.MaxES > 0 && (Math.Round(player.ESPercentage, 3) * 100 < Settings.customEsPct.Value)))
-                            {
-                                KeyPress(Settings.customKey);
-                                lastCustom = DateTime.Now;
-                            }
-
-                        }
-                    }
-                    catch (Exception e)
-                    {
-                        LogError(e.ToString());
-                    }
-                }
-                #endregion
-
-                #region Detonate Mines ( to be done )
-                if (Settings.minesEnabled)
-                {
-                    try
-                    {
-                        if (Ready())
-                        {
-                            var remoteMines = localPlayer.GetComponent<Actor>().DeployedObjects.Where(x => x.Entity != null && x.Entity.Path == "Metadata/MiscellaneousObjects/RemoteMine").ToList();
-
-                            // Removed Logic
-                            // What should a proper Detonator do and when ?
-                            // Detonate Mines when they have the chance to hit a target (Range), include min. mines ?
-                            // Internal delay 500-1000ms ?
-                            // Removing/Filter enemys that are not "deployed" yet / invunerale from enemys list ? 
-
-                        }
-                    }
-                    catch (Exception e)
-                    {
-                        LogError(e.ToString());
-                    }
-                }
-                #endregion
             }
         }
     }
-}
-internal static class MouseTools
-{
-    public static bool IsMouseLeftPressed()
+    internal static class MouseTools
     {
-        if (Control.MouseButtons == MouseButtons.Left)
-            return true;
-        else
-            return false;
-    }
-    public static void MouseLeftClickEvent()
-    {
-        MouseEvent(MouseEventFlags.LeftUp);
-        Thread.Sleep(10);
-        MouseEvent(MouseEventFlags.LeftDown);
-    }
-
-    public static void MouseRightClickEvent()
-    {
-        MouseEvent(MouseEventFlags.RightUp);
-        Thread.Sleep(10);
-        MouseEvent(MouseEventFlags.RightDown);
-    }
-
-    public static Point GetCursorPosition()
-    {
-        Point currentMousePoint;
-        return GetCursorPos(out currentMousePoint) ? new Point(currentMousePoint.X, currentMousePoint.Y) : new Point(0, 0);
-    }
-
-    private static void MouseEvent(MouseEventFlags value)
-    {
-        var position = GetCursorPosition();
-
-        mouse_event
-            ((int)value,
-                position.X,
-                position.Y,
-                0,
-                0)
-            ;
-    }
-}
-public class Keyboard
-{
-    [DllImport("user32.dll")]
-    private static extern uint keybd_event(byte bVk, byte bScan, int dwFlags, int dwExtraInfo);
-
-    private const int KEYEVENTF_EXTENDEDKEY = 0x0001;
-    private const int KEYEVENTF_KEYUP = 0x0002;
-
-    private const int ACTION_DELAY = 15;
-
-
-    [DllImport("user32.dll")]
-    public static extern bool BlockInput(bool fBlockIt);
-
-    public static void KeyDown(Keys key)
-    {
-        keybd_event((byte)key, 0, KEYEVENTF_EXTENDEDKEY | 0, 0);
-    }
-
-    public static void KeyUp(Keys key)
-    {
-        keybd_event((byte)key, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0); //0x7F
-    }
-
-    [DllImport("USER32.dll")]
-    private static extern short GetKeyState(int nVirtKey);
-
-    public static bool IsKeyDown(int nVirtKey)
-    {
-        return GetKeyState(nVirtKey) < 0;
-    }
-}
-public static class WinApiMouse
-{
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool GetCursorPos(out Point lpMousePoint);
-
-    [DllImport("user32.dll")]
-    public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);
-
-    #region Structs/Enums
-
-    [Flags]
-    public enum MouseEventFlags
-    {
-        LeftDown = 0x00000002,
-        LeftUp = 0x00000004,
-        MiddleDown = 0x00000020,
-        MiddleUp = 0x00000040,
-        Move = 0x00000001,
-        Absolute = 0x00008000,
-        RightDown = 0x00000008,
-        RightUp = 0x00000010
-    }
-
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct Point
-    {
-        public int X;
-        public int Y;
-
-        public Point(int x, int y)
+        public static bool IsMouseLeftPressed()
         {
-            X = x;
-            Y = y;
+            if (Control.MouseButtons == MouseButtons.Left)
+                return true;
+            else
+                return false;
+        }
+        public static void MouseLeftClickEvent()
+        {
+            MouseEvent(MouseEventFlags.LeftUp);
+            Thread.Sleep(10);
+            MouseEvent(MouseEventFlags.LeftDown);
         }
 
-    }
+        public static void MouseRightClickEvent()
+        {
+            MouseEvent(MouseEventFlags.RightUp);
+            Thread.Sleep(10);
+            MouseEvent(MouseEventFlags.RightDown);
+        }
 
-    #endregion
-}
+        public static Point GetCursorPosition()
+        {
+            Point currentMousePoint;
+            return GetCursorPos(out currentMousePoint) ? new Point(currentMousePoint.X, currentMousePoint.Y) : new Point(0, 0);
+        }
+
+        private static void MouseEvent(MouseEventFlags value)
+        {
+            var position = GetCursorPosition();
+
+            mouse_event
+                ((int)value,
+                    position.X,
+                    position.Y,
+                    0,
+                    0)
+                ;
+        }
+    }
+    public class Keyboard
+    {
+        [DllImport("user32.dll")]
+        private static extern uint keybd_event(byte bVk, byte bScan, int dwFlags, int dwExtraInfo);
+
+        private const int KEYEVENTF_EXTENDEDKEY = 0x0001;
+        private const int KEYEVENTF_KEYUP = 0x0002;
+
+        private const int ACTION_DELAY = 15;
+
+
+        [DllImport("user32.dll")]
+        public static extern bool BlockInput(bool fBlockIt);
+
+        public static void KeyDown(Keys key)
+        {
+            keybd_event((byte)key, 0, KEYEVENTF_EXTENDEDKEY | 0, 0);
+        }
+
+        public static void KeyUp(Keys key)
+        {
+            keybd_event((byte)key, 0, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, 0); //0x7F
+        }
+
+        [DllImport("USER32.dll")]
+        private static extern short GetKeyState(int nVirtKey);
+
+        public static bool IsKeyDown(int nVirtKey)
+        {
+            return GetKeyState(nVirtKey) < 0;
+        }
+    }
+    public static class WinApiMouse
+    {
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool GetCursorPos(out Point lpMousePoint);
+
+        [DllImport("user32.dll")]
+        public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, int dwExtraInfo);
+
+        #region Structs/Enums
+
+        [Flags]
+        public enum MouseEventFlags
+        {
+            LeftDown = 0x00000002,
+            LeftUp = 0x00000004,
+            MiddleDown = 0x00000020,
+            MiddleUp = 0x00000040,
+            Move = 0x00000001,
+            Absolute = 0x00008000,
+            RightDown = 0x00000008,
+            RightUp = 0x00000010
+        }
+
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct Point
+        {
+            public int X;
+            public int Y;
+
+            public Point(int x, int y)
+            {
+                X = x;
+                Y = y;
+            }
+
+        }
+
+        #endregion
+    }
 }
 
 
